@@ -71,7 +71,7 @@ void findBounder(Mat &bImg, Mat &img) {
 
 
 int main() {
-//    string filepath = "E:\\C++Projects\\openCV\\zhiNengShiBie\\ex2Copy\\sources\\1.jpg";
+//    string filepath = "E:\\C++Projects\\openCV\\zhiNengShiBie\\ex2Copy\\sources\\car3.bmp";
     string filepath = "sources\\1.jpg";
     Mat img, bImg;
     img = imread(filepath);
