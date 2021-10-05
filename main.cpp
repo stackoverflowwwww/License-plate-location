@@ -2,83 +2,59 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <bits/stdc++.h>
-#include <direct.h>
-#include <io.h>
-
 using namespace std;
 using namespace cv;
-
-void getSpecificChannel(Mat &img, Mat &dst, int channel) {
-    dst.create(img.size[0], img.size[1], CV_8U);
-    int fromTo[2] = {channel, 0};
-    mixChannels(img, dst, fromTo, 1);
-}
-
 const int closeKernelSizeW = 17, closeKernelSizeH = 5;
-Mat closeKernel = getStructuringElement(MORPH_RECT, Size(closeKernelSizeW, closeKernelSizeH));
-Mat rodeKernel = Mat::zeros(Size(5, 5), CV_8U);
-Mat kernelX = getStructuringElement(MORPH_RECT, Size(55, 1));
-
-Mat preorcess(Mat &img) {
-    resize(img, img, Size(1024, 768));
-    rodeKernel.col(2) = 1;
-    Mat imgGray, imgBlur, edges, imgDil, imgRode, imgClose;
-//    cvtColor(img,imgGray,COLOR_BGR2GRAY);
-    getSpecificChannel(img, imgGray, 0);
-    GaussianBlur(imgGray, imgBlur, Size(3, 3), 3, 3);
-//    Sobel(imgBlur, edges, -1, 1, 0);
-//    threshold(edges, edges, 0, 255, THRESH_OTSU);
-//    Canny(imgBlur,edges,25,75);
-    Laplacian(imgBlur, edges, -1);
-    threshold(edges, edges, 0, 255, THRESH_OTSU);
-    erode(edges, imgRode, rodeKernel);
-    morphologyEx(imgRode, imgClose, MORPH_CLOSE, closeKernel, Point(-1, -1), 3);
-    Mat bImgX;
-    dilate(imgClose, bImgX, kernelX);
-    return bImgX;
+Mat closeKernel = getStructuringElement(MORPH_RECT, Size(closeKernelSizeW, closeKernelSizeH)); //用于preprocess函数中的闭合操作
+// 预处理车图像，返回二值图像
+Mat preprocess(Mat &img) {
+    resize(img, img, Size(1024, 768)); //统一大小
+    Mat imgGray, imgBinary,imgClose;
+    vector<Mat> img_channels;
+    split(img,img_channels);
+    imgGray=3*img_channels[0]-img_channels[1]-img_channels[2]; //提取颜色特征: 3*B-G-R
+    imgGray.convertTo(imgGray,CV_8U);
+    threshold(imgGray,imgBinary,200,255,THRESH_BINARY); //不用大津法，而是使用自定义阈值th，th可根据统计得出，但这里比较懒，主观设置了
+    morphologyEx(imgBinary, imgClose, MORPH_CLOSE, closeKernel, Point(-1, -1), 3);
+    return imgClose;
 }
-
-void findBounder(Mat &bImg, Mat &img) {
+//根据二值图像找出车牌，并在原图像img中显示bounding box
+void findBounder(Mat &imgBinary, Mat &img) {
     vector<vector<Point>> contours;
     vector<Vec4i> hierarchy;
-    findContours(bImg, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+    findContours(imgBinary, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
     vector<vector<Point>> conPoly(contours.size());
     vector<Rect> boundRect(contours.size());
     float area, peri;
-    vector<Point> retConPoly;
-    double bestRatio=4.3,minInterval=3.5,curRatio;
-    int bestRectInd=-1;
     for (int i = 0; i < contours.size(); i++) {
-        area = contourArea(contours[i]);
-        peri = arcLength(contours[i], true);
+        area = contourArea(contours[i]); //面积
+        peri = arcLength(contours[i], true); //周长
         approxPolyDP(contours[i], conPoly[i], 0.02 * peri, true);
-        boundRect[i] = boundingRect(conPoly[i]);
-        if (area >= 12000 && area <= 55000) {
-            curRatio=boundRect[i].width*1.0/boundRect[i].height;
-            if (curRatio>=2&&curRatio<=5.5) {
-                if(abs(curRatio-bestRatio)<minInterval){
-                    minInterval=abs(curRatio-bestRatio);
-                    bestRectInd=i;
-                }
+        boundRect[i] = boundingRect(conPoly[i]); //设置所有轮廓的bounding box
+        if (area >= 4800 && area <= 55000) { //用轮廓的面积进行筛选
+            if (boundRect[i].width >= 2 * boundRect[i].height && boundRect[i].width <= 4.25* boundRect[i].height) { //用bounding box的宽高比进行筛选
+                rectangle(img, boundRect[i].tl(), boundRect[i].br(), Scalar(0, 255, 0), 5);
             }
         }
     }
-    if(bestRectInd>=0){
-        rectangle(img, boundRect[bestRectInd].tl(), boundRect[bestRectInd].br(), Scalar(0, 255, 0), 5);
-    }
-
 }
 
 
 int main() {
-//    string filepath = "E:\\C++Projects\\openCV\\zhiNengShiBie\\ex2Copy\\sources\\car3.bmp";
-    string filepath = "sources\\1.jpg";
-    Mat img, bImg;
-    img = imread(filepath);
-    bImg = preorcess(img);
-    findBounder(bImg, img);
-    imshow("img", img);
-//    imshow("bImg", bImg);
+    string folder = "E:\\C++Projects\\openCV\\zhiNengShiBie\\ex2Copy\\sources"; //车图像根目录
+    string fileName, resultPath;
+    int pos;
+    vector<String> imgFiles;
+    glob(folder, imgFiles);
+    Mat img, imgBinary;
+    for (String &filepath:imgFiles) { //读取并处理所有车图像
+        pos = filepath.find_last_of("\\");
+        fileName = filepath.substr(pos + 1);
+        img = imread(filepath);
+        imgBinary = preprocess(img);
+        findBounder(imgBinary, img);
+        imshow(fileName + " img", img);
+    }
     waitKey(0);
 }
 
